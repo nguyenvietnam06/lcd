@@ -1,23 +1,13 @@
-/* USER CODE BEGIN Header */
-/**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  */
-/* USER CODE END Header */
-
 #include "main.h"
 #include "CLCD.h"
 #include <stdio.h>
 
-/* Private variables ---------------------------------------------------------*/
+/* LCD handle */
 CLCD_Name LCD1;
-uint8_t Count = 0;      // B? d?m LCD
-uint8_t led_value = 0;  // LED7
+uint8_t Count = 0;      // Giá tr? hi?n th? 0-9
 char LCD_send[16];
 
-/* M?ng mã LED 7 do?n CA (PA0->a ... PA6->g, PA7->DP) */
+/* LED7 segment CA (PA0->a ... PA6->g, PA7->DP) */
 const uint8_t LED7_TABLE[10] = {
     0x3F, // 0
     0x06, // 1
@@ -31,12 +21,28 @@ const uint8_t LED7_TABLE[10] = {
     0x6F  // 9
 };
 
-/* Private function prototypes -----------------------------------------------*/
+/* Debounce variables */
+uint32_t lastTickPB0 = 0;
+uint32_t lastTickPB1 = 0;
+uint32_t lastTickPB10 = 0;
+
+/* Function prototypes */
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+void LCD_Update(void);
 void LED7_Display(uint8_t value);
 
-/* USER CODE BEGIN 0 */
+/* C?p nh?t LCD */
+void LCD_Update(void)
+{
+    CLCD_SetCursor(&LCD1, 0, 0);
+    CLCD_WriteString(&LCD1, "NAM HIEU        "); // xóa ký t? cu
+    sprintf(LCD_send, "Count : %d   ", Count);
+    CLCD_SetCursor(&LCD1, 0, 1);
+    CLCD_WriteString(&LCD1, LCD_send);
+}
+
+/* C?p nh?t LED7 */
 void LED7_Display(uint8_t value)
 {
     uint8_t pattern = LED7_TABLE[value % 10];
@@ -45,19 +51,51 @@ void LED7_Display(uint8_t value)
         HAL_GPIO_WritePin(GPIOA, (1<<i), (pattern & (1<<i)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
 }
-/* USER CODE END 0 */
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+/* Ng?t ngoài callback */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    uint32_t tick = HAL_GetTick(); // L?y th?i gian hi?n t?i
+
+    if(GPIO_Pin == GPIO_PIN_0)  // PB0: Tang
+    {
+        if(tick - lastTickPB0 > 50) // debounce 50ms
+        {
+            Count++;
+            if(Count > 9) Count = 0;
+            lastTickPB0 = tick;
+        }
+    }
+    else if(GPIO_Pin == GPIO_PIN_10) // PB10: Gi?m
+    {
+        if(tick - lastTickPB10 > 50)
+        {
+            if(Count == 0) Count = 9;
+            else Count--;
+            lastTickPB10 = tick;
+        }
+    }
+    else if(GPIO_Pin == GPIO_PIN_1) // PB1: Reset
+    {
+        if(tick - lastTickPB1 > 50)
+        {
+            Count = 0;
+            lastTickPB1 = tick;
+        }
+    }
+
+    // C?p nh?t LCD + LED7 ngay khi nh?n
+    LCD_Update();
+    LED7_Display(Count);
+}
+
 int main(void)
 {
     HAL_Init();
     SystemClock_Config();
     MX_GPIO_Init();
 
-    // Kh?i t?o LCD 16x2
+    // Kh?i t?o LCD 16x2 (8-bit)
     CLCD_8BIT_Init(&LCD1, 16, 2,
                    CS_GPIO_Port, CS_Pin,
                    EN_GPIO_Port, EN_Pin,
@@ -70,19 +108,13 @@ int main(void)
                    D6_GPIO_Port, D6_Pin,
                    D7_GPIO_Port, D7_Pin);
 
-    LED7_Display(led_value);
+    // Hi?n th? ban d?u
+    LCD_Update();
+    LED7_Display(Count);
 
-    while (1)
+    while(1)
     {
-        // Hi?n th? LCD
-        CLCD_SetCursor(&LCD1, 0, 0);
-        CLCD_WriteString(&LCD1, "NAM HIEU");
-
-        sprintf(LCD_send, "LCD Dem : %d", Count);
-        CLCD_SetCursor(&LCD1, 0, 1);
-        CLCD_WriteString(&LCD1, LCD_send);
-
-        HAL_Delay(200);
+        // Main loop tr?ng, t?t c? di?u khi?n qua EXTI ng?t ngoài
     }
 }
 
@@ -99,7 +131,7 @@ void SystemClock_Config(void)
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
     RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
     RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
-    HAL_RCC_OscConfig(&RCC_OscInitStruct);
+    if(HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) while(1);
 
     RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                                 |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
@@ -107,89 +139,50 @@ void SystemClock_Config(void)
     RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+    if(HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) while(1);
 }
 
-/* GPIO Initialization Function */
-static void MX_GPIO_Init(void)
+/* GPIO Initialization */
+void MX_GPIO_Init(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE(); // LCD + LED7
+    __HAL_RCC_GPIOB_CLK_ENABLE(); // Nút nh?n
 
-    // PA0-PA7 output cho LED7
-    GPIO_InitStruct.Pin = 0xFF;
+    // LED7 PA0-PA7 output
+    GPIO_InitStruct.Pin = 0xFF; // PA0–PA7
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    // PB0, PB1, PB10 input v?i ng?t
-    GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+    // LCD pins PB/PA
+    GPIO_InitStruct.Pin = D0_Pin|D1_Pin|D2_Pin|D3_Pin|D4_Pin;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = D5_Pin|D6_Pin|D7_Pin|EN_Pin|CS_Pin;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    // Nút nh?n PB0, PB1, PB10 input pull-up + EXTI
+    GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING; // ng?t c?nh xu?ng
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    // NVIC
+    // Enable EXTI IRQs
     HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
     HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0); // PB10
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
-/* Ng?t EXTI cho PB0 */
-void EXTI0_IRQHandler(void)
-{
-    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
-}
+/* IRQ Handlers g?i HAL */
+void EXTI0_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
+void EXTI1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }
+void EXTI15_10_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10); }
 
-/* Ng?t EXTI cho PB1 */
-void EXTI1_IRQHandler(void)
-{
-    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
-}
-
-/* Ng?t EXTI cho PB10 */
-void EXTI15_10_IRQHandler(void)
-{
-    HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
-}
-
-/* Callback khi ng?t x?y ra */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if(GPIO_Pin == GPIO_PIN_0) // PB0 tang
-    {
-        Count++;
-        led_value++;
-        if(led_value > 9) led_value = 0;
-        LED7_Display(led_value);
-    }
-    else if(GPIO_Pin == GPIO_PIN_1) // PB1 gi?m
-    {
-        if(Count > 0) Count--;
-        if(led_value == 0)
-            led_value = 9;
-        else
-            led_value--;
-        LED7_Display(led_value);
-    }
-    else if(GPIO_Pin == GPIO_PIN_10) // PB10 reset
-    {
-        Count = 0;
-        led_value = 0;
-        LED7_Display(led_value);
-    }
-}
-
-/* Error Handler */
-void Error_Handler(void)
-{
-    while(1) {}
-}
+void Error_Handler(void) { while(1); }
