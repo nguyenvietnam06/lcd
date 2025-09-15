@@ -1,3 +1,116 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+
+#include "main.h"
+#include "CLCD.h"
+#include <stdio.h>
+
+/* Private variables ---------------------------------------------------------*/
+CLCD_Name LCD1;
+uint8_t Count = 0;      // B? d?m LCD
+uint8_t led_value = 0;  // LED7
+char LCD_send[16];
+
+/* M?ng mã LED 7 do?n CA (PA0->a ... PA6->g, PA7->DP) */
+const uint8_t LED7_TABLE[10] = {
+    0x3F, // 0
+    0x06, // 1
+    0x5B, // 2
+    0x4F, // 3
+    0x66, // 4
+    0x6D, // 5
+    0x7D, // 6
+    0x07, // 7
+    0x7F, // 8
+    0x6F  // 9
+};
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+void LED7_Display(uint8_t value);
+
+/* USER CODE BEGIN 0 */
+void LED7_Display(uint8_t value)
+{
+    uint8_t pattern = LED7_TABLE[value % 10];
+    for(int i = 0; i < 8; i++)
+    {
+        HAL_GPIO_WritePin(GPIOA, (1<<i), (pattern & (1<<i)) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    }
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    // Kh?i t?o LCD 16x2
+    CLCD_8BIT_Init(&LCD1, 16, 2,
+                   CS_GPIO_Port, CS_Pin,
+                   EN_GPIO_Port, EN_Pin,
+                   D0_GPIO_Port, D0_Pin,
+                   D1_GPIO_Port, D1_Pin,
+                   D2_GPIO_Port, D2_Pin,
+                   D3_GPIO_Port, D3_Pin,
+                   D4_GPIO_Port, D4_Pin,
+                   D5_GPIO_Port, D5_Pin,
+                   D6_GPIO_Port, D6_Pin,
+                   D7_GPIO_Port, D7_Pin);
+
+    LED7_Display(led_value);
+
+    while (1)
+    {
+        // Hi?n th? LCD
+        CLCD_SetCursor(&LCD1, 0, 0);
+        CLCD_WriteString(&LCD1, "NAM HIEU");
+
+        sprintf(LCD_send, "LCD Dem : %d", Count);
+        CLCD_SetCursor(&LCD1, 0, 1);
+        CLCD_WriteString(&LCD1, LCD_send);
+
+        HAL_Delay(200);
+    }
+}
+
+/* System Clock Configuration */
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+    RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+    RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+    RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+    HAL_RCC_OscConfig(&RCC_OscInitStruct);
+
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                                |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+}
+
 /* GPIO Initialization Function */
 static void MX_GPIO_Init(void)
 {
@@ -13,60 +126,70 @@ static void MX_GPIO_Init(void)
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    // PB0, PB1, PB10 input với ngắt
+    // PB0, PB1, PB10 input v?i ng?t
     GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
     GPIO_InitStruct.Pull = GPIO_PULLUP;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    // NVIC cho ngắt
+    // NVIC
     HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
     HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(EXTI1_IRQn);
 
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);  // PB10 nằm trong EXTI10
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0); // PB10
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
-/* Ngắt EXTI cho PB0 */
+/* Ng?t EXTI cho PB0 */
 void EXTI0_IRQHandler(void)
 {
     HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
 }
 
-/* Ngắt EXTI cho PB1 */
+/* Ng?t EXTI cho PB1 */
 void EXTI1_IRQHandler(void)
 {
     HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1);
 }
 
-/* Ngắt EXTI cho PB10 */
+/* Ng?t EXTI cho PB10 */
 void EXTI15_10_IRQHandler(void)
 {
     HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
 }
 
-/* Callback khi ngắt xảy ra */
+/* Callback khi ng?t x?y ra */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if(GPIO_Pin == GPIO_PIN_0)      // Tăng 1
+    if(GPIO_Pin == GPIO_PIN_0) // PB0 tang
     {
         Count++;
         led_value++;
         if(led_value > 9) led_value = 0;
+        LED7_Display(led_value);
     }
-    else if(GPIO_Pin == GPIO_PIN_1) // Giảm 1
+    else if(GPIO_Pin == GPIO_PIN_1) // PB1 gi?m
     {
         if(Count > 0) Count--;
-        if(led_value == 0) led_value = 9;
-        else led_value--;
+        if(led_value == 0)
+            led_value = 9;
+        else
+            led_value--;
+        LED7_Display(led_value);
     }
-    else if(GPIO_Pin == GPIO_PIN_10) // Reset
+    else if(GPIO_Pin == GPIO_PIN_10) // PB10 reset
     {
         Count = 0;
         led_value = 0;
+        LED7_Display(led_value);
     }
-    LED7_Display(led_value);
+}
+
+/* Error Handler */
+void Error_Handler(void)
+{
+    while(1) {}
 }
