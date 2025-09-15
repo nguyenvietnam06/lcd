@@ -1,0 +1,128 @@
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "CLCD.h"
+#include <stdio.h>
+
+/* Private variables ---------------------------------------------------------*/
+CLCD_Name LCD1;
+uint8_t Count = 0;
+char LCD_send[16];
+
+/* Debounce variables */
+uint32_t lastTickPB0 = 0;
+uint32_t lastTickPB1 = 0;
+uint32_t lastTickPB10 = 0;
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+/* USER CODE BEGIN 0 */
+
+/* Ng?t ngoài callback */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    uint32_t tick = HAL_GetTick(); // L?y th?i gian hi?n t?i
+
+    if(GPIO_Pin == GPIO_PIN_0)  // PB0: Tang
+    {
+        if(tick - lastTickPB0 > 50) // debounce 50ms
+        {
+            Count++;
+            lastTickPB0 = tick;
+        }
+    }
+    else if(GPIO_Pin == GPIO_PIN_1) // PB1: Gi?m
+    {
+        if(tick - lastTickPB1 > 50)
+        {
+            if(Count > 0) Count--;
+            lastTickPB1 = tick;
+        }
+    }
+    else if(GPIO_Pin == GPIO_PIN_10) // PB10: Reset
+    {
+        if(tick - lastTickPB10 > 50)
+        {
+            Count = 0;
+            lastTickPB10 = tick;
+        }
+    }
+}
+
+/* USER CODE END 0 */
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    /* Kh?i t?o LCD 8-bit 16x2 */
+    CLCD_8BIT_Init(&LCD1, 16, 2, CS_GPIO_Port, CS_Pin, EN_GPIO_Port, EN_Pin,
+                    D0_GPIO_Port, D0_Pin, D1_GPIO_Port, D1_Pin,
+                    D2_GPIO_Port, D2_Pin, D3_GPIO_Port, D3_Pin,
+                    D4_GPIO_Port, D4_Pin, D5_GPIO_Port, D5_Pin,
+                    D6_GPIO_Port, D6_Pin, D7_GPIO_Port, D7_Pin);
+
+    while(1)
+    {
+        CLCD_SetCursor(&LCD1, 0, 0);
+        CLCD_WriteString(&LCD1, "NAM HIEU");
+
+        sprintf(LCD_send, "LCD Dem : %d  ", Count); // thêm kho?ng tr?ng d? xóa s? cu
+        CLCD_SetCursor(&LCD1, 0, 1);
+        CLCD_WriteString(&LCD1, LCD_send);
+
+        HAL_Delay(200); // update LCD 200ms
+    }
+}
+
+/* GPIO Init ---------------------------------------------------------------*/
+static void MX_GPIO_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    /* GPIO Ports Clock Enable */
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    /* Configure LCD pins PB/PA as output */
+    HAL_GPIO_WritePin(GPIOB, D0_Pin|D1_Pin|D2_Pin|D3_Pin|D4_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOA, D5_Pin|D6_Pin|D7_Pin|EN_Pin|CS_Pin, GPIO_PIN_RESET);
+
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+    GPIO_InitStruct.Pin = D0_Pin|D1_Pin|D2_Pin|D3_Pin|D4_Pin;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = D5_Pin|D6_Pin|D7_Pin|EN_Pin|CS_Pin;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* Configure buttons PB0, PB1, PB10 as input with EXTI */
+    GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING; // ng?t c?nh xu?ng
+    GPIO_InitStruct.Pull = GPIO_PULLUP;          // pull-up
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    /* Enable EXTI IRQs */
+    HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+    HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+}
+
+/* Clock config & Error Handler... gi? nguyên nhu tru?c */
+void SystemClock_Config(void) { /* ... */ }
+void Error_Handler(void) { while(1); }
+
+/* IRQ Handlers g?i HAL */
+void EXTI0_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); }
+void EXTI1_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_1); }
+void EXTI15_10_IRQHandler(void) { HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10); }
